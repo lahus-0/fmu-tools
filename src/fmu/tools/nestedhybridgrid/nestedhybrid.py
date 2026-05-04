@@ -23,6 +23,7 @@ import numpy as np
 import pandas as pd
 import xtgeo
 
+
 if TYPE_CHECKING:
     import os
     from collections.abc import Iterable
@@ -343,6 +344,7 @@ def create_nested_hybrid_grid(
     # 2. Refine the cropped grid.
     refined = cropped.copy()
     rcol, rrow, rlay = refinement
+    ocol, orow, olay = crop_origin
     refined.refine(refine_col=rcol, refine_row=rrow, refine_layer=rlay)
     _logger.info("Refined cropped grid dimensions: %s", refined.dimensions)
 
@@ -384,8 +386,58 @@ def create_nested_hybrid_grid(
     )
     refined.append_prop(nest_id_refined)
 
-    # 7. Merge the two grids.
-    merged = xtgeo.grid_merge(grid, refined)
+    # 7. Create INPUT_INDEX_I/J/K properties for ijk grid index of original cell
+    orig_i_coarse = xtgeo.GridProperty(
+        grid,
+        name="INPUT_INDEX_I",
+        discrete=True,
+        values=np.repeat(np.linspace(1,grid.dimensions.ncol,num=grid.dimensions.ncol,dtype=np.int32),grid.dimensions.nrow*grid.dimensions.nlay).reshape((grid.dimensions.ncol,grid.dimensions.nrow,grid.dimensions.nlay)).astype(np.int32),
+    )
+    grid.append_prop(orig_i_coarse)
+
+    orig_i_refined = xtgeo.GridProperty(
+        refined,
+        name="INPUT_INDEX_I",
+        discrete=True,
+        values=np.repeat(np.repeat(np.linspace(1,int(refined.dimensions.ncol/rcol),num=int(refined.dimensions.ncol/rcol),dtype=np.int32)+crop_origin[0],rcol),refined.dimensions.nrow*refined.dimensions.nlay).reshape((refined.dimensions.ncol,refined.dimensions.nrow,refined.dimensions.nlay)).astype(np.int32),
+    )
+    refined.append_prop(orig_i_refined)
+
+    orig_j_coarse = xtgeo.GridProperty(
+        grid,
+        name="INPUT_INDEX_J",
+        discrete=True,
+        values=np.swapaxes(np.repeat(np.linspace(1,grid.dimensions.nrow,num=grid.dimensions.nrow,dtype=np.int32),grid.dimensions.ncol*grid.dimensions.nlay).reshape((grid.dimensions.nrow,grid.dimensions.ncol,grid.dimensions.nlay)),0,1).astype(np.int32),
+    )
+    grid.append_prop(orig_j_coarse)
+
+    orig_j_refined = xtgeo.GridProperty(
+        refined,
+        name="INPUT_INDEX_J",
+        discrete=True,
+        values=np.swapaxes(np.repeat(np.repeat(np.linspace(1,int(refined.dimensions.nrow/rrow),num=int(refined.dimensions.nrow/rrow),dtype=np.int32)+crop_origin[1],rrow),refined.dimensions.ncol*refined.dimensions.nlay).reshape((refined.dimensions.nrow,refined.dimensions.ncol,refined.dimensions.nlay)),0,1).astype(np.int32),
+    )
+    refined.append_prop(orig_j_refined)
+
+    orig_k_coarse = xtgeo.GridProperty(
+        grid,
+        name="INPUT_INDEX_K",
+        discrete=True,
+        values=np.swapaxes(np.repeat(np.linspace(1,grid.dimensions.nlay,num=grid.dimensions.nlay,dtype=np.int32),grid.dimensions.ncol*grid.dimensions.nrow).reshape((grid.dimensions.nlay,grid.dimensions.nrow,grid.dimensions.ncol)),0,2).astype(np.int32),
+    )
+    grid.append_prop(orig_k_coarse)
+
+    orig_k_refined = xtgeo.GridProperty(
+        refined,
+        name="INPUT_INDEX_K",
+        discrete=True,
+        values=np.swapaxes(np.repeat(np.repeat(np.linspace(1,int(refined.dimensions.nlay/rlay),num=int(refined.dimensions.nlay/rlay),dtype=np.int32)+crop_origin[2],rlay),refined.dimensions.ncol*refined.dimensions.nrow).reshape((refined.dimensions.nlay,refined.dimensions.nrow,refined.dimensions.ncol)),0,2).astype(np.int32),
+    )
+    refined.append_prop(orig_k_refined)
+
+
+    # 8. Merge the two grids.
+    merged = xtgeo.grid_merge(grid, refined, olay, rlay)
     _logger.info("Merged grid dimensions: %s", merged.dimensions)
 
     return merged, nnc_table
