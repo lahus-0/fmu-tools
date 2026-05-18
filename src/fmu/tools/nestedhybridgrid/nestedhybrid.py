@@ -23,7 +23,6 @@ import numpy as np
 import pandas as pd
 import xtgeo
 
-
 if TYPE_CHECKING:
     import os
     from collections.abc import Iterable
@@ -271,134 +270,188 @@ def _set_actnum_by_region(
     actnum.values[mask] = 0
     grid.set_actnum(actnum)
 
+
 def _modify_upscaling_mapping(
-    upscale: tuple[ xtgeo.GridProperty, xtgeo.GridProperty, xtgeo.GridProperty, xtgeo.GridProperty, xtgeo.GridProperty, xtgeo.GridProperty ],
+    upscale: tuple[
+        xtgeo.GridProperty,
+        xtgeo.GridProperty,
+        xtgeo.GridProperty,
+        xtgeo.GridProperty,
+        xtgeo.GridProperty,
+        xtgeo.GridProperty,
+    ],
     region: xtgeo.GridProperty,
     target_region_id: int,
     refinement: tuple[int, int, int],
     offset: tuple[int, int, int],
     grid2_dims: tuple[int, int, int],
-) -> tuple[ xtgeo.GridProperty, xtgeo.GridProperty, xtgeo.GridProperty]:
+) -> tuple[xtgeo.GridProperty, xtgeo.GridProperty, xtgeo.GridProperty]:
     """Update a cell mapping for upscaling
-        upscale: (
-            I_property - xtgeo.GridProperty mapping geogrid cells to merged grid I
-            J_property - xtgeo.GridProperty mapping geogrid cells to merged grid J
-            K_property - xtgeo.GridProperty mapping geogrid cells to merged grid K
-            I refinement - xtgeo.GridProperty on input grid with number geogrid per in I
-            J refinement - xtgeo.GridProperty on input grid with number geogrid per in J
-            K refinement - xtgeo.GridProperty on input grid with number geogrid per in K
-            )
-        region: input region (before merging)
-        target_region_id: region to be refined
-        refinement: refinement (i,j,k) to be applied per cell in target region
-        offset: start cell of the refinement region
-        grid2_dims: (columns, rows, layers) in refined grid
+    upscale: (
+        I_property - xtgeo.GridProperty mapping geogrid cells to merged grid I
+        J_property - xtgeo.GridProperty mapping geogrid cells to merged grid J
+        K_property - xtgeo.GridProperty mapping geogrid cells to merged grid K
+        I refinement - xtgeo.GridProperty on input grid with number geogrid per in I
+        J refinement - xtgeo.GridProperty on input grid with number geogrid per in J
+        K refinement - xtgeo.GridProperty on input grid with number geogrid per in K
+        )
+    region: input region (before merging)
+    target_region_id: region to be refined
+    refinement: refinement (i,j,k) to be applied per cell in target region
+    offset: start cell of the refinement region
+    grid2_dims: (columns, rows, layers) in refined grid
     """
-    
+
     # shift region from input grid to geogrid to know which cells are refined or not
     imap, jmap, kmap, iref, jref, kref = upscale
 
-    iv=imap.values.reshape(-1)-1
-    jv=jmap.values.reshape(-1)-1
-    kv=kmap.values.reshape(-1)-1
-    irv=iref.values
-    jrv=jref.values
-    krv=kref.values
-    
-    ivo=iv.copy()
-    jvo=jv.copy()
-    kvo=kv.copy()
- 
-    cn=iv*(jv.max()+1)*(kv.max()+1)+jv*(kv.max()+1)+kv
-    
-    region2=np.ma.masked_array(np.zeros(len(iv)),mask=cn.mask)
-    region2[np.where(cn.mask==False)]=region.values.reshape(-1)[cn[np.where(cn.mask==False)].astype(np.int32)]
-    
+    iv = imap.values.reshape(-1) - 1
+    jv = jmap.values.reshape(-1) - 1
+    kv = kmap.values.reshape(-1) - 1
+    irv = iref.values
+    jrv = jref.values
+    krv = kref.values
+
+    ivo = iv.copy()
+    jvo = jv.copy()
+    kvo = kv.copy()
+
+    cn = iv * (jv.max() + 1) * (kv.max() + 1) + jv * (kv.max() + 1) + kv
+
+    region2 = np.ma.masked_array(np.zeros(len(iv)), mask=cn.mask)
+    region2[np.where(cn.mask == False)] = region.values.reshape(-1)[
+        cn[np.where(cn.mask == False)].astype(np.int32)
+    ]
+
     oi, oj, ok = offset
     ri, rj, rk = refinement
     di, dj, dk = grid2_dims
-  
+
     # create a mapping from old layer to new layer where there is no refinement
-    lmap = np.arange(kv.max()+1,dtype=np.int32)
+    lmap = np.arange(kv.max() + 1, dtype=np.int32)
     lmap = lmap + np.where(
         lmap < ok,
         0,
-        (rk - 1)
-        * np.minimum(int(dk / rk), lmap - ok),
+        (rk - 1) * np.minimum(int(dk / rk), lmap - ok),
     )
-    kvo[np.where((cn.mask == False) & (region2 != target_region_id))]=lmap[kv[np.where((cn.mask==False) & (region2 != target_region_id))].astype(np.int32)]
- 
+    kvo[np.where((cn.mask == False) & (region2 != target_region_id))] = lmap[
+        kv[np.where((cn.mask == False) & (region2 != target_region_id))].astype(
+            np.int32
+        )
+    ]
 
-#    # create a mapping from old layer to new layer where there is a refinement
-#    # split by refinement level in ijk directions to simplify mapping
-    for uri in np.unique(irv[np.where((irv.mask==False) & (region.values==target_region_id))]):
-        for urj in np.unique(jrv[np.where((irv.mask==False) & (region.values==target_region_id) & (irv==uri))]):
-            for urk in np.unique(krv[np.where((irv.mask==False) & (region.values==target_region_id) & (irv==uri) & (jrv==urj))]):
-                cijkr = np.argwhere((irv.mask==False) & (region.values==target_region_id) & (irv==uri) & (jrv==urj) & (krv==urk))
-                cnr = cijkr[:,0]*(jv.max()+1)*(kv.max()+1)+cijkr[:,1]*(kv.max()+1)+cijkr[:,2]
+    # create a mapping from old layer to new layer where there is a refinement
+    # split by refinement level in ijk directions to simplify mapping
+    for uri in np.unique(
+        irv[np.where((irv.mask == False) & (region.values == target_region_id))]
+    ):
+        for urj in np.unique(
+            jrv[
+                np.where(
+                    (irv.mask == False)
+                    & (region.values == target_region_id)
+                    & (irv == uri)
+                )
+            ]
+        ):
+            for urk in np.unique(
+                krv[
+                    np.where(
+                        (irv.mask == False)
+                        & (region.values == target_region_id)
+                        & (irv == uri)
+                        & (jrv == urj)
+                    )
+                ]
+            ):
+                cijkr = np.argwhere(
+                    (irv.mask == False)
+                    & (region.values == target_region_id)
+                    & (irv == uri)
+                    & (jrv == urj)
+                    & (krv == urk)
+                )
+                cnr = (
+                    cijkr[:, 0] * (jv.max() + 1) * (kv.max() + 1)
+                    + cijkr[:, 1] * (kv.max() + 1)
+                    + cijkr[:, 2]
+                )
 
-                il2 = (np.repeat(np.arange( di/ri, dtype=np.float32 ) + oi,ri*dj*dk)).reshape((di,dj,dk))
-                il2 = np.repeat( il2, uri/ri, axis = 0)
-                il2 = np.repeat( il2, urj/rj, axis = 1)
-                il2 = np.repeat( il2, urk/rk, axis = 2)
+                il2 = (
+                    np.repeat(
+                        np.arange(int(di / ri), dtype=np.float32) + oi, ri * dj * dk
+                    )
+                ).reshape((di, dj, dk))
+                il2 = np.repeat(il2, int(uri / ri), axis=0)
+                il2 = np.repeat(il2, int(urj / rj), axis=1)
+                il2 = np.repeat(il2, int(urk / rk), axis=2)
                 il2 = il2.reshape(-1)
 
-                jl2 = np.swapaxes((np.repeat(np.arange( dj/rj, dtype=np.float32 ) + oj,rj*di*dk)).reshape((dj,di,dk)),0,1)
-                jl2 = np.repeat( jl2, uri/ri, axis = 0)
-                jl2 = np.repeat( jl2, urj/rj, axis = 1)
-                jl2 = np.repeat( jl2, urk/rk, axis = 2)
+                jl2 = np.swapaxes(
+                    (
+                        np.repeat(
+                            np.arange(int(dj / rj), dtype=np.float32) + oj, rj * di * dk
+                        )
+                    ).reshape((dj, di, dk)),
+                    0,
+                    1,
+                )
+                jl2 = np.repeat(jl2, int(uri / ri), axis=0)
+                jl2 = np.repeat(jl2, int(urj / rj), axis=1)
+                jl2 = np.repeat(jl2, int(urk / rk), axis=2)
                 jl2 = jl2.reshape(-1)
 
-                kl2 = np.swapaxes((np.repeat(np.arange( dk/rk, dtype=np.float32 ) + ok,rk*di*dj)).reshape((dk,dj,di)),0,2)
-                kl2 = np.repeat( kl2, uri/ri, axis = 0)
-                kl2 = np.repeat( kl2, urj/rj, axis = 1)
-                kl2 = np.repeat( kl2, urk/rk, axis = 2)
+                kl2 = np.swapaxes(
+                    (
+                        np.repeat(
+                            np.arange(int(dk / rk), dtype=np.float32) + ok, rk * di * dj
+                        )
+                    ).reshape((dk, dj, di)),
+                    0,
+                    2,
+                )
+                kl2 = np.repeat(kl2, int(uri / ri), axis=0)
+                kl2 = np.repeat(kl2, int(urj / rj), axis=1)
+                kl2 = np.repeat(kl2, int(urk / rk), axis=2)
                 kl2 = kl2.reshape(-1)
 
-                cl2 = il2*(jv.max()+1)*(kv.max()+1)+jl2*(kv.max()+1)+kl2
-                 
-                lmap2 = np.arange( dk, dtype=np.float32 ) + ok
-                lmap2 = np.tile( lmap2, di * dj ).reshape((di,dj,dk))
-                lmap2 = np.repeat( lmap2, uri/ri, axis = 0) 
-                lmap2 = np.repeat( lmap2, urj/rj, axis = 1)
-                lmap2 = np.repeat( lmap2, urk/rk, axis = 2)
+                cl2 = il2 * (jv.max() + 1) * (kv.max() + 1) + jl2 * (kv.max() + 1) + kl2
 
-                cmap2 = np.arange( di, dtype=np.float32 ) + iv.max() + 2
-                cmap2 = np.repeat( cmap2, dj * dk ).reshape((di,dj,dk))
-                cmap2 = np.repeat( cmap2, uri/ri, axis = 0)
-                cmap2 = np.repeat( cmap2, urj/rj, axis = 1)
-                cmap2 = np.repeat( cmap2, urk/rk, axis = 2) 
+                lmap2 = np.arange(dk, dtype=np.float32) + ok
+                lmap2 = np.tile(lmap2, di * dj).reshape((di, dj, dk))
+                lmap2 = np.repeat(lmap2, int(uri / ri), axis=0)
+                lmap2 = np.repeat(lmap2, int(urj / rj), axis=1)
+                lmap2 = np.repeat(lmap2, int(urk / rk), axis=2)
 
-                rmap2 = np.arange( dj, dtype=np.float32 ) 
-                rmap2 = np.swapaxes(np.repeat(rmap2, di*dk).reshape((dj,di,dk)),0,1)
-                rmap2 = np.repeat( rmap2, uri/ri, axis = 0)
-                rmap2 = np.repeat( rmap2, urj/rj, axis = 1)
-                rmap2 = np.repeat( rmap2, urk/rk, axis = 2)
+                cmap2 = np.arange(di, dtype=np.float32) + iv.max() + 2
+                cmap2 = np.repeat(cmap2, dj * dk).reshape((di, dj, dk))
+                cmap2 = np.repeat(cmap2, int(uri / ri), axis=0)
+                cmap2 = np.repeat(cmap2, int(urj / rj), axis=1)
+                cmap2 = np.repeat(cmap2, int(urk / rk), axis=2)
+
+                rmap2 = np.arange(dj, dtype=np.float32)
+                rmap2 = np.swapaxes(
+                    np.repeat(rmap2, di * dk).reshape((dj, di, dk)), 0, 1
+                )
+                rmap2 = np.repeat(rmap2, int(uri / ri), axis=0)
+                rmap2 = np.repeat(rmap2, int(urj / rj), axis=1)
+                rmap2 = np.repeat(rmap2, int(urk / rk), axis=2)
 
                 lmap2 = lmap2.reshape(-1)
-                kvo[np.isin(cn,cnr)]=lmap2[np.isin(cl2,cnr)]
+                kvo[np.isin(cn, cnr)] = lmap2[np.isin(cl2, cnr)]
 
                 cmap2 = cmap2.reshape(-1)
-                ivo[np.isin(cn,cnr)]=cmap2[np.isin(cl2,cnr)]
+                ivo[np.isin(cn, cnr)] = cmap2[np.isin(cl2, cnr)]
 
                 rmap2 = rmap2.reshape(-1)
-                jvo[np.isin(cn,cnr)]=rmap2[np.isin(cl2,cnr)] 
+                jvo[np.isin(cn, cnr)] = rmap2[np.isin(cl2, cnr)]
 
+    imap.values = ivo.reshape(imap.values.shape).astype(np.float32) + 1.0
+    jmap.values = jvo.reshape(imap.values.shape).astype(np.float32) + 1.0
+    kmap.values = kvo.reshape(imap.values.shape).astype(np.float32) + 1.0
 
-    imap.values=ivo.reshape(imap.values.shape).astype(np.float32)+1.0
-    jmap.values=jvo.reshape(imap.values.shape).astype(np.float32)+1.0
-    kmap.values=kvo.reshape(imap.values.shape).astype(np.float32)+1.0
+    return (imap, jmap, kmap)
 
-#region != target_region_id
-#no change to imap or jmap
-#kmap update layering
-
-#region == target_region_id
-# need to know refinement per cell in geogrid and simgrid
-# update imap and jmap based on offset and refinement
-# update kmap based on layering
-
-    return ( imap, jmap, kmap )
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -410,18 +463,26 @@ def create_nested_hybrid_grid(
     region: xtgeo.GridProperty,
     target_region_id: int,
     refinement: tuple[int, int, int],
-    upscaling: tuple[ xtgeo.GridProperty,  xtgeo.GridProperty,  xtgeo.GridProperty, xtgeo.GridProperty,  xtgeo.GridProperty,  xtgeo.GridProperty ] | None = None,
-) -> tuple[xtgeo.Grid, pd.DataFrame,  tuple[ xtgeo.GridProperty,  xtgeo.GridProperty,  xtgeo.GridProperty ] | None ]:
+    upscaling: tuple[
+        xtgeo.GridProperty,
+        xtgeo.GridProperty,
+        xtgeo.GridProperty,
+        xtgeo.GridProperty,
+        xtgeo.GridProperty,
+        xtgeo.GridProperty,
+    ]
+    | None = None,
+) -> tuple[
+    xtgeo.Grid,
+    pd.DataFrame,
+    tuple[xtgeo.GridProperty, xtgeo.GridProperty, xtgeo.GridProperty] | None,
+]:
     """Create a nested hybrid grid by refining one region and merging it back.
 
     The cells belonging to *target_region_id* are replaced by a refined
-    (subdivided) version of the same region.  A ``NEST_ID`` discrete property
-    is attached to the merged grid, encoding the nested hybrid structure:
+    (subdivided) version of the same region.
 
-    - ``NEST_ID == 1``: coarse (mother) grid cells.
-    - ``NEST_ID == 2``: refined grid cells.
-
-    In addition, a **NNC mapping table** is returned that lists every
+    A **NNC mapping table** is returned that lists every
     mother ↔ refined cell pair that should be connected by a Non-Neighbour
     Connection (NNC).  The table is derived from the topological knowledge
     available at merge time (which original cell was refined and how its
@@ -444,15 +505,30 @@ def create_nested_hybrid_grid(
             regions (e.g. an integer region parameter).
         target_region_id: The region value to refine.
         refinement: ``(ncol, nrow, nlay)`` refinement factors.
-        geo_grid: The geogrid with upscaling mapping attached
-        upscale_props: (I,J,K) name of mapping properties to update
+        upscale_props: (
+            GEOGRID: mapping of geogrid cells to I coordinates in input grid
+            GEOGRID: mapping of geogrid cells to J coordinates in input grid
+            GEOGRID: mapping of geogrid cells to K coordinates in input grid
+            INPUT: refinement of geogrid cells in I direction on input grid
+            INPUT: refinement of geogrid cells in J direction on input grid
+            INPUT: refinement of geogrid cells in K direction on input grid
+        )
 
     Returns:
-        A tuple ``(merged_grid, nnc_table, geogrid)`` where *merged_grid* is a new
+
+        When no upscaling properties are supplied:
+        A tuple ``(merged_grid, nnc_table)`` where *merged_grid* is a new
         :class:`xtgeo.Grid` with the refined region stitched back into the
         coarse grid and *nnc_table* is a :class:`pandas.DataFrame` mapping
-        mother cells to their connected refined cells. geogrid is the input geogrid
-        with properties mapping cells for upscaling updated.
+        mother cells to their connected refined cells.
+
+        When upscaling properties are supplied:
+        A tuple ``(merged_grid, nnc_table, upscaling_tuple)`` where *merged_grid*
+        is a new :class:`xtgeo.Grid` with the refined region stitched back into
+        the coarse grid and *nnc_table* is a :class:`pandas.DataFrame` mapping
+        mother cells to their connected refined cells. upscaling tuple is a tuple
+        with 3 :class:`xtgeo.GridProperty' (I, J, K) with the updating mapping
+        from geogrid to merged grid for upscaling.
     """
     if any(r < 1 for r in refinement):
         raise ValueError(f"Refinement factors must be >= 1, got {refinement}")
@@ -476,7 +552,7 @@ def create_nested_hybrid_grid(
     # 2. Refine the cropped grid.
     refined = cropped.copy()
     rcol, rrow, rlay = refinement
-    ocol, orow, olay = crop_origin
+    _, _, olay = crop_origin
     refined.refine(refine_col=rcol, refine_row=rrow, refine_layer=rlay)
     _logger.info("Refined cropped grid dimensions: %s", refined.dimensions)
 
@@ -499,18 +575,24 @@ def create_nested_hybrid_grid(
     refined_region = refined.get_prop_by_name(region.name)
     _set_actnum_by_region(refined, refined_region, target_region_id, invert=True)
 
-    # 8. Merge the two grids.
+    # 6. Merge the two grids.
     merged = xtgeo.grid_merge(grid, refined, olay, rlay)
     _logger.info("Merged grid dimensions: %s", merged.dimensions)
 
-    if upscaling!=None:
-        upscaling = _modify_upscaling_mapping(upscaling,
-            region, target_region_id, refinement, crop_origin,
-            ( refined.dimensions.ncol, refined.dimensions.nrow, refined.dimensions.nlay )
+    # 7. Update upscaling map if needed
+    if upscaling is not None:
+        upscaling = _modify_upscaling_mapping(
+            upscaling,
+            region,
+            target_region_id,
+            refinement,
+            crop_origin,
+            (refined.dimensions.ncol, refined.dimensions.nrow, refined.dimensions.nlay),
         )
 
-  
-    return merged, nnc_table, upscaling
+    if upscaling is not None:
+        return merged, nnc_table, upscaling
+    return merged, nnc_table
 
 
 def nnc_to_gridproperty(

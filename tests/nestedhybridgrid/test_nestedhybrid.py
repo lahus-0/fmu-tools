@@ -77,11 +77,11 @@ class TestCreateNestedHybridGrid:
         assert merged.nlay >= grid.nlay
 
     def test_nest_id_property_attached(self):
-        """The merged grid must have a NEST_ID property."""
+        """The merged grid must have a refinement region property."""
         grid, region, rid = _make_box_grid_with_region(dimension=(6, 6, 2))
         merged, _ = create_nested_hybrid_grid(grid, region, rid, refinement=(1, 1, 1))
 
-        nest_id = merged.get_prop_by_name("NEST_ID")
+        nest_id = merged.get_prop_by_name(region.name)
         assert nest_id is not None
         unique_vals = set(np.unique(np.ma.filled(nest_id.values, fill_value=0)))
         # Must contain at least mother (1) and refined (2) cells
@@ -89,11 +89,11 @@ class TestCreateNestedHybridGrid:
         assert 2 in unique_vals
 
     def test_nest_id_values_consistent(self):
-        """Active cells should only have NEST_ID in {1, 2}."""
+        """Active cells should only have refinement region in {1, 2}."""
         grid, region, rid = _make_box_grid_with_region(dimension=(6, 6, 2))
         merged, _ = create_nested_hybrid_grid(grid, region, rid, refinement=(1, 1, 1))
 
-        nest_id = merged.get_prop_by_name("NEST_ID")
+        nest_id = merged.get_prop_by_name(region.name)
         actnum = merged.get_actnum()
 
         active_mask = actnum.values == 1
@@ -131,6 +131,66 @@ class TestCreateNestedHybridGrid:
         assert grid.nactive == orig_nactive
         assert int(np.ma.filled(region.values, 0).sum()) == orig_region_sum
 
+    def test_upscaling(self):
+        """test upscaling only modified in refined region"""
+        grid = xtgeo.create_box_grid((3, 3, 3), increment=(100.0, 100.0, 20.0))
+        geogrid = xtgeo.create_box_grid((6, 6, 6), increment=(50.0, 50.0, 10.0))
+
+        region = _make_constant_property(grid, "REGION", 1)
+        region.values[1][1][1] = 2
+
+        rid = 2
+
+        ri = _make_constant_property(grid, "REFI", 2)
+        rj = _make_constant_property(grid, "REFJ", 2)
+        rk = _make_constant_property(grid, "REFK", 2)
+
+        il2 = (np.repeat(np.arange(3, dtype=np.float32), 3 * 3)).reshape((3, 3, 3)) + 1
+        il2 = np.repeat(il2, 2, axis=0)
+        il2 = np.repeat(il2, 2, axis=1)
+        il2 = np.repeat(il2, 2, axis=2)
+        ui = xtgeo.GridProperty(geogrid, name="UI", values=il2.astype(np.float32))
+
+        jl2 = (
+            np.swapaxes(
+                (np.repeat(np.arange(3, dtype=np.float32), 3 * 3)).reshape((3, 3, 3)),
+                0,
+                1,
+            )
+            + 1
+        )
+        jl2 = np.repeat(jl2, 2, axis=0)
+        jl2 = np.repeat(jl2, 2, axis=1)
+        jl2 = np.repeat(jl2, 2, axis=2)
+        uj = xtgeo.GridProperty(geogrid, name="UJ", values=jl2.astype(np.float32))
+
+        kl2 = (
+            np.swapaxes(
+                (np.repeat(np.arange(3, dtype=np.float32), 3 * 3)).reshape((3, 3, 3)),
+                0,
+                2,
+            )
+            + 1
+        )
+        kl2 = np.repeat(kl2, 2, axis=0)
+        kl2 = np.repeat(kl2, 2, axis=1)
+        kl2 = np.repeat(kl2, 2, axis=2)
+        uk = xtgeo.GridProperty(geogrid, name="UK", values=kl2.astype(np.float32))
+
+        upscale = (ui, uj, uk, ri, rj, rk)
+        _, _, upscaled = create_nested_hybrid_grid(
+            grid, region, rid, refinement=(2, 2, 2), upscaling=upscale
+        )
+
+        upi, upj, upk = upscaled
+
+        assert upi.values[0][0][0] == 1
+        assert upj.values[0][0][0] == 1
+        assert upk.values[0][0][0] == 1
+        assert upi.values[2][2][2] == 5
+        assert upk.values[2][2][2] == 2
+        assert upj.values[3][3][3] == 2
+
 
 # ---------------------------------------------------------------------------
 # Tests for get_transmissibilities with nested hybrid NNCs
@@ -138,7 +198,7 @@ class TestCreateNestedHybridGrid:
 
 
 class TestTransmissibilitiesOnMergedGrid:
-    """Test calling get_transmissibilities on the merged grid with NEST_ID."""
+    """Test calling get_transmissibilities on the merged grid"""
 
     @staticmethod
     def _build_merged_with_props(dimension=(6, 6, 2), refinement=(1, 1, 1)):
